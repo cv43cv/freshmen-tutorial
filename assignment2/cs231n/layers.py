@@ -25,7 +25,9 @@ def affine_forward(x, w, b):
     # TODO: Implement the affine forward pass. Store the result in out. You   #
     # will need to reshape the input into rows.                               #
     ###########################################################################
-    pass
+    N = np.shape(x)[0]
+    x = x.reshape(N,-1)
+    out = np.matmul(x,w) + b
     ###########################################################################
     #                             END OF YOUR CODE                            #
     ###########################################################################
