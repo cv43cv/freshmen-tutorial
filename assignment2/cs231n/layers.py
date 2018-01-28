@@ -174,7 +174,16 @@ def batchnorm_forward(x, gamma, beta, bn_param):
         # variance, storing your result in the running_mean and running_var   #
         # variables.                                                          #
         #######################################################################
-        pass
+        sample_mean = np.sum(x, axis=0) / N
+        sample_var = np.sum((x-sample_mean)*(x-sample_mean), axis=0) / N
+
+        normx = (x - sample_mean) / np.sqrt(sample_var + eps)
+        out = gamma * normx + beta
+
+        running_mean = momentum * running_mean + (1 - momentum) * sample_mean
+        running_var = momentum * running_var + (1 - momentum) * sample_var
+
+        cache = (x, gamma, beta, eps)
         #######################################################################
         #                           END OF YOUR CODE                          #
         #######################################################################
@@ -185,7 +194,8 @@ def batchnorm_forward(x, gamma, beta, bn_param):
         # then scale and shift the normalized data using gamma and beta.      #
         # Store the result in the out variable.                               #
         #######################################################################
-        pass
+        normx = (x - running_mean) / np.sqrt(running_var)
+        out = gamma * normx + beta
         #######################################################################
         #                          END OF YOUR CODE                           #
         #######################################################################
@@ -221,7 +231,17 @@ def batchnorm_backward(dout, cache):
     # TODO: Implement the backward pass for batch normalization. Store the    #
     # results in the dx, dgamma, and dbeta variables.                         #
     ###########################################################################
-    pass
+    x, gamma, beta, eps = cache
+    N, D = x.shape
+    sample_mean = np.sum(x, axis=0) / N
+    sample_var = np.sum((x-sample_mean)*(x-sample_mean), axis=0) / N
+    invr_var = 1/np.sqrt(sample_var + eps)
+
+    normx = (x - sample_mean) * invr_var
+
+    dx = dout * gamma * invr_var - (np.sum(dout * gamma * invr_var, axis=0) / N + np.sum(dout * gamma * normx * invr_var**2, axis=0) * (x - sample_mean) / N)
+    dgamma = np.sum(dout * normx, axis=0)
+    dbeta = np.sum(dout, axis=0)
     ###########################################################################
     #                             END OF YOUR CODE                            #
     ###########################################################################
