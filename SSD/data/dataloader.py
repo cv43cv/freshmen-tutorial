@@ -1,6 +1,6 @@
 import argparse
 import os
-from xmlreader import xmlreader
+from datasets.xmlreader import xmlreader
 from PIL import Image
 import numpy as np
 import cv2
