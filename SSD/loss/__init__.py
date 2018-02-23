@@ -7,7 +7,7 @@ def matched_db(y):
     Args:
         y : (dictionary) ground truth classes for each bounding boxes
     Return :
-        array of matched default boxes for each objects (object_no, object_class, layer_depth, i, j, s)
+        array of matched default boxes for each objects (object_no, object_class, matchbox_index)
     """
 
     n_db = [4, 6, 6, 6, 4, 4]
@@ -52,11 +52,11 @@ def matched_db(y):
     for a in range(mbox.shape[0]):
         obj_n = mbox[a,0]
         obj_c = obj_list[obj_n]
-        l, i, j, s = ww(mbox[a,1])
-        output.append((obj_n, obj_c, l, i ,j, s))
+        output.append((obj_n, obj_c, mbox[a,1]))
 
     return output
 
+"""
 def ww(x):
     n_db = [4, 6, 6, 6, 4, 4]
     f_sizes = [38, 19, 10, 5, 3, 1]
@@ -71,6 +71,7 @@ def ww(x):
             j = ij - i * f
             break
     return l, i, j, s
+"""
 
 
 
