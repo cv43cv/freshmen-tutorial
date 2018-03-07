@@ -2,11 +2,28 @@ import torch
 import torch.nn as nn
 import torch.nn.init as init
 import torchvision.models as models
-from layers import *
+from layers.l2norm import *
+
+def build_SSD(phase, num_classes, pretrained=True):
+    base = vgg16()
+    extras = add_extras(1024)
+    loc, conf = boxbox(base, extras, num_classes)
+    model = SSD(
+            phase='train', 
+            base = base,
+            extras = extras,
+            loc = loc,
+            conf = conf,
+            num_classes = 21,
+            pretrained = pretrained
+        )
+    return model
+
+
 
 class SSD(nn.Module):
 
-    def __init__(self, phase, base, extras, loc, conf, num_classes, pretrained=True):
+    def __init__(self, phase, base, loc, conf, extras, num_classes, pretrained=True):
         super(SSD, self).__init__()
         self.phase = phase
         self.num_classes = num_classes
@@ -22,7 +39,7 @@ class SSD(nn.Module):
     def forward(self, x):
         """
         Args:
-            x: input image or batch of images shape (batch,300,300,3)
+            x: input image or batch of images shape (batch,3,300,300)
         """
         sources = []
         loc = []
@@ -105,6 +122,7 @@ def add_extras(in_channel):
             else:
                 layers += [nn.Conv2d(in_c, v, kernel_size=(1, 3)[flag]), nn.ReLU(inplace=True)]
             flag = not flag
+            in_c = v
 
     return layers
 
@@ -119,7 +137,7 @@ def boxbox(vgg, extra_layer, num_classes):
         loc_layers += [nn.Conv2d(vgg[v].out_channels, cfg[k] * 4, kernel_size=3, padding=1)]
         conf_layers += [nn.Conv2d(vgg[v].out_channels, cfg[k] * num_classes, kernel_size=3, padding=1)]
 
-    for k, v in enumerate(extra_layer[1::2], 2):
+    for k, v in enumerate(extra_layer[2::4], 2):
         loc_layers += [nn.Conv2d(v.out_channels, cfg[k] * 4, kernel_size=3, padding=1)]
         conf_layers += [nn.Conv2d(v.out_channels, cfg[k] * num_classes, kernel_size=3, padding=1)]
 

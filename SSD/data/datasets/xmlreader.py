@@ -5,6 +5,13 @@ import os
 import xml.etree.ElementTree as ET
 
 def xmlreader(dataset_xml, dataset_list):
+    """
+    Return:
+        sample (dictionary) : dictionary for a data
+                sample['filename'] (string) : filename ~~~.jpg
+                sample['object'] (dictionary) : dictionary for objects in image
+                sample['object'][object class] (dictionary) : dictionary for the object's bounding box coordinates (xmin, ymin, xmax, ymax)
+    """
     f = open(dataset_list,'r')
     data = []
     idx=0

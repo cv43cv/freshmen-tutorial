@@ -2,9 +2,9 @@ import torch
 import torch.nn as nn
 import torch.nn.init as init
 
-class l2Norm(nn.Module):
+class l2norm(nn.Module):
     def __init__(self,n_channels, scale):
-        super(l2Norm,self).__init__()
+        super(l2norm,self).__init__()
         self.n_channels = n_channels
         self.gamma = scale or None
         self.eps = 1e-10

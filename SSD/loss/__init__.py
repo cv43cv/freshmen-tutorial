@@ -1,94 +1,62 @@
 import torch
-import numpy as np
+import torch.nn as nn
+import torch.nn.functional as F
+from torch.autograd import Variable
+
 from loss.common import *
 
-def matched_db(y):
-    """
-    Args:
-        y : (dictionary) ground truth classes for each bounding boxes
-    Return :
-        array of matched default boxes for each objects (object_no, object_class, matchbox_index)
-    """
 
-    n_db = [4, 6, 6, 6, 4, 4]
-    f_sizes = [38, 19, 10, 5, 3, 1]
-    (s_min, s_max) = (0.1, 0.9)
-    s = [s_min + (s_max - s_min) * k / 5 for k in range(7)]
-    a = [1, 2, 1/2, 3, 1/3]
+class myloss(nn.Module):
+    def __init__(self, num_classes, negpos_ratio=3, use_gpu=True):
+        super(myloss, self).__init__()
+        self.num_classes = num_classes
+        self.negpos_ratio = negpos_ratio
+        self.use_gpu = use_gpu
 
-    box_d = []
-
-    b = 0
-    for k, (n, f) in enumerate(zip(n_db, f_sizes)):
-        for i in range(f):
-            for j in range(f):
-                c_y = (i+.5)/f
-                c_x = (j+.5)/f
-                for r in range(n-1):
-                    w = s[k] * a[r]**.5
-                    h = s[k] / a[r]**.5
-                    box_d.append([c_x-w/2, c_y-h/2, c_x+w/2, c_y+h/2])
-                w = (s[k] * s[k+1])**.5 / f
-                h = (s[k] * s[k+1])**.5 / f
-                box_d.append([c_x-w/2, c_y-h/2, c_x+w/2, c_y+h/2])
-
-    box_d = torch.FloatTensor(box_d)
-
-    obj_list = []
-    box_o = []
-
-    for obj_c, box in y['object'].items():
-        obj_list.append(obj_c)
-        box_o.append([box['xmin']/300, box['ymin']/300, box['xmax']/300, box['ymax']/300])
-
-    box_o = torch.FloatTensor(box_o)
-
-    j = jaccard(box_o, box_d)
-    j = j.numpy()
-    mbox = np.argwhere(j > 0.5)
-
-    output = []
-
-    for a in range(mbox.shape[0]):
-        obj_n = mbox[a,0]
-        obj_c = obj_list[obj_n]
-        output.append((obj_n, obj_c, mbox[a,1]))
-
-    return output
-
-"""
-def ww(x):
-    n_db = [4, 6, 6, 6, 4, 4]
-    f_sizes = [38, 19, 10, 5, 3, 1]
+    def forward(self, x, y):
+        """
+        Args:
+            x : tuple of tensors (x_loc, x_conf)
+            y : tensor shape(N, num_obj, 5)
     
-    for l, (n, f) in enumerate(zip(n_db, f_sizes)):
-        x -= f**2 * n
-        if x < 0:
-            x += f**2 * n
-            ij =int(x / n)
-            s = x - ij * n
-            i = int(ij / f)
-            j = ij - i * f
-            break
-    return l, i, j, s
-"""
+        """
+        x_loc, x_conf = x
+        N = x_loc.size(0)
+        C = self.num_classes
 
+        y = Variable(match_db(y.data))
 
+        pos = y[:,:,0] > 0
 
-                
+        num_pos = pos.long().sum(dim=1, keepdim=True)
 
+        if num_pos.sum().data[0] == 0:
+            return Variable(torch.FloatTensor([0])), Variable(torch.FloatTensor([0]))
+        
+        #Localization Loss
+        pos_idx = pos.unsqueeze(2).expand_as(x_loc)
+        x_loc = x_loc[pos_idx].view(-1, 4)
+        y_loc = y[:,:,1:][pos_idx].view(-1,4)
+        loss_loc = F.smooth_l1_loss(x_loc, y_loc, size_average=False)
 
+        #Confidence Loss
+        l = softmax_loss(x_conf.contiguous().view(-1, self.num_classes), y[:,:,4].long().view(-1)).view(N, -1)
+        
+        l[pos] = 0
 
+        _, loss_idx = l.sort(1, descending=True)
+        _, idx_rank = loss_idx.sort(1)
+        num_neg = torch.clamp(self.negpos_ratio*num_pos, max=pos.size(1)-1)
+        neg = idx_rank < num_neg
 
+        pos_idx = pos.unsqueeze(2).expand_as(x_conf)
+        neg_idx = neg.unsqueeze(2).expand_as(x_conf)
+        x_conf = x_conf[(pos_idx + neg_idx).gt(0)].view(-1, self.num_classes)
+        y_conf = y[:,:,0][(pos + neg).gt(0)].long()
+        loss_conf = F.cross_entropy(x_conf, y_conf, size_average=False)
 
+        N = num_pos.sum().float()
+        loss_loc /= N
+        loss_conf /= N
 
-def conf_loss(x, y):
-    """
-    Args:
-        x : (tensor) output of conf, Shape (Number of default boxes, C)
-        y : (dictionary) ground truth classes for each bounding boxes
-    """
-
-    
-
-
+        return loss_loc, loss_conf

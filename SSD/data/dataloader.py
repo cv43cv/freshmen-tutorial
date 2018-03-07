@@ -1,5 +1,6 @@
 import argparse
 import os
+import torch
 from data.datasets.xmlreader import xmlreader
 from PIL import Image
 import numpy as np
@@ -7,7 +8,7 @@ import cv2
 from torch.utils.data import Dataset, DataLoader
 
 class VOC2012Dataset(Dataset):
-    def __init__(self, dataset_dir, dataset_xml, dataset_list):
+    def __init__(self, start, end, dataset_dir, dataset_xml, dataset_list):
         """
         Args:
             dataset_dir (string) : Path to the img files dir
@@ -15,61 +16,75 @@ class VOC2012Dataset(Dataset):
             dataset_list (string) : Path to the dataset list file
 
         Return:
-            sample (dictionary) : dictionary for a data
-                sample['filename'] (string) : filename ~~~.jpg
-                sample['image'] () : image matrix
-                sample['object'] (dictionary) : dictionary for objects in image
-                sample['object'][object class] (dictionary) : dictionary for the object's bounding box coordinates (xmin, ymin, xmax, ymax) 
+             
         """
+        self.start = start
+        self.end = end
+        self.num = end - start
         self.dataset_dir = dataset_dir
         self.dataset_xml = dataset_xml
         self.dataset_list = dataset_list
         self.data = xmlreader(self.dataset_xml, self.dataset_list)
 
-        self.class_list = ['person', 
+        self.class_list = ['background', 
+            'person', 
             'bird', 'cat', 'cow', 'dog', 'horse', 'sheep', 
             'aeroplane', 'bicycle', 'boat', 'bus', 'car', 'motorbike', 'train',
-            'bottle', 'chair', 'dining table', 'potted plant', 'sofa', 'tvmonitor']
+            'bottle', 'chair', 'diningtable', 'pottedplant', 'sofa', 'tvmonitor']
 
     def __len__(self):
-        return len(self.data)
+        return min(self.num, len(self.data))
 
     def __getitem__(self, idx):
-        img_name = os.path.join(self.dataset_dir, self.data[idx]['filename'])
+        data = self.data[idx + self.start]
+        img_name = os.path.join(self.dataset_dir, data['filename'])
         img = cv2.imread(img_name)
         (h, w, _) = img.shape
-        sample = self.data[idx].copy()
-        for obj_s, box in sample['object'].items():
-            if obj_s in self.class_list:
-                obj_c = self.class_list.index(obj_s)
-                sample['object'][obj_c] = box.copy()
+        y = [[0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0]]
+        for i, (obj_s, box) in enumerate(data['object'].items()):
+            if i > 2:
+                break
+            
+            obj_c = self.class_list.index(obj_s)
 
-                sample['object'][obj_c]['xmin'] = int(sample['object'][obj_c]['xmin'] * 300 / w)
-                sample['object'][obj_c]['xmax'] = int(sample['object'][obj_c]['xmax'] * 300 / w)
-                sample['object'][obj_c]['ymin'] = int(sample['object'][obj_c]['ymin'] * 300 / h)
-                sample['object'][obj_c]['ymax'] = int(sample['object'][obj_c]['ymax'] * 300 / h)
-
-                sample['object'].pop(obj_s)
+            xmin = box['xmin'] / w
+            ymin = box['ymin'] / h
+            xmax = box['xmax'] / w
+            ymax = box['ymax'] / h
+            
+            y[i] = [obj_c, xmin, ymin, xmax, ymax]
+        
         img = cv2.resize(img, (300,300))
-        sample['image'] = img
+        img = torch.from_numpy(img).permute(2, 0, 1)
+        img = img.float() / 255
+        y = torch.FloatTensor(y)
+        sample = (img, y)
 
         return sample
                 
         
 def show_bndbox(sample):
-    class_list = ['person', 
+    class_list = ['background',
+            'person', 
             'bird', 'cat', 'cow', 'dog', 'horse', 'sheep', 
             'aeroplane', 'bicycle', 'boat', 'bus', 'car', 'motorbike', 'train',
             'bottle', 'chair', 'dining table', 'potted plant', 'sofa', 'tvmonitor']
-    img = sample['image']
+    img, box = sample
+    img = img.permute(1, 2, 0) * 255
+    img = np.uint8(img.numpy())
 
-    for obj, pos in sample['object'].items():
-        xmin = pos['xmin']
-        ymin = pos['ymin']
-        xmax = pos['xmax']
-        ymax = pos['ymax']
-        img = cv2.putText(img, class_list[obj],(xmin,ymax), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,255,0), 2)
-        img = cv2.rectangle(img, (xmin,ymin), (xmax,ymax), (0,255,0), 2)
+    if box != None:
+        for i in range(box.size(0)):
+            obj = int(box[i, 0])
+            xmin = int(box[i, 1] * 300)
+            ymin = int(box[i, 2] * 300)
+            xmax = int(box[i, 3] * 300)
+            ymax = int(box[i, 4] * 300)
+        
+            img = cv2.putText(img, class_list[obj],(xmin,ymax), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,255,0), 2)
+            img = cv2.rectangle(img, (xmin,ymin), (xmax,ymax), (0,255,0), 2)
 
     cv2.imshow('image', img)
     cv2.waitKey(0)
@@ -91,8 +106,6 @@ if __name__  == '__main__':
 
     for i in range(len(voc_dataset)):
         sample = voc_dataset[i]
-
-        print(i, sample['filename'])
 
         show_bndbox(sample)
 
