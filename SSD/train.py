@@ -1,3 +1,4 @@
+import os
 import torch
 from torch.autograd import Variable
 import torch.optim as optim
@@ -18,9 +19,12 @@ args = parser.parse_args()
 
 ssd_dim = 300 
 num_classes = 21
+num_train=10000
 batch_size=32
+load = ''
+start_iter = 0
 max_iter = 10000
-learning_rate = 1e-4
+learning_rate = 1e-3
 weight_decay = 0.0005
 gamma = 0.1
 momentum = 0.9
@@ -43,8 +47,8 @@ def train():
     epoch = 0
 
     print('Loading Dataset...')
-    dataset = VOC2012Dataset(0, 32, dataset_dir = args.dataset_dir, dataset_xml = args.dataset_xml, dataset_list = args.dataset_list)
-    data_loader = data.DataLoader(dataset, batch_size, pin_memory=True)
+    dataset = VOC2012Dataset(0, num_train, dataset_dir = args.dataset_dir, dataset_xml = args.dataset_xml, dataset_list = args.dataset_list)
+    data_loader = data.DataLoader(dataset, batch_size, shuffle=True, pin_memory=True)
     
     print('Building model...')
     model = build_SSD(
@@ -55,19 +59,24 @@ def train():
     if torch.cuda.is_available():
         model = model.cuda()
 
-    print('initializing model...')
-    model.extras.apply(weights_init)
-    model.loc.apply(weights_init)
-    model.conf.apply(weights_init)
+    if load == '':
+        print('initializing model...')
+        model.extras.apply(weights_init)
+        model.loc.apply(weights_init)
+        model.conf.apply(weights_init)
+    else:    
+        print('loading model...')
+        model.load_state_dict(torch.load(os.path.join('save',load)))
 
     optimizer = optim.SGD(model.parameters(), lr=learning_rate,
                       momentum=momentum, weight_decay=weight_decay)
     criterion = myloss(num_classes = num_classes)
 
     print('Start training...')
-    for iteration in range(max_iter):
+    for iteration in range(start_iter, max_iter):
+        ll = 0
+        t0 = time.time()
         for i, d in enumerate(data_loader, 0):
-
             img, y = d
 
             if torch.cuda.is_available():
@@ -76,25 +85,25 @@ def train():
             else:
                 img = Variable(img)
                 y = Variable(y)
-
-            t0 = time.time()
             out = model(img)
             optimizer.zero_grad()
             loss_loc, loss_conf = criterion(out, y)
             loss = loss_loc + loss_conf
             if loss.data[0] == 0:
                 continue
+            ll += loss.data[0]
             loss.backward()
             optimizer.step()
-            t1 = time.time()
-        if iteration % 100 == 0:
-            print('Timer: %.4f sec.' % (t1 - t0))
-            print('iter ' + repr(iteration) + ' || Loss: %.4f ||' % loss, end=' ')
-    
-    torch.save(model.state_dict(), 'save.pth')
+        t1 = time.time()
+        print('iter ' + repr(iteration) + ' || Loss: %.4f ||' % (ll /num_train *batch_size), end=' ')
+        print('Timer: %.4f sec.' % (t1 - t0))
+        if iteration % 10 == 0:
+            torch.save(model.state_dict(), os.path.join('save', 'man-' + str(iteration) + '.pth'))
+
+    print("training end. model is saved in save.pth")
 
 def test():
-    dataset = VOC2012Dataset(32, 40, dataset_dir = args.dataset_dir, dataset_xml = args.dataset_xml, dataset_list = args.dataset_list)
+    dataset = VOC2012Dataset(0, 32, dataset_dir = args.dataset_dir, dataset_xml = args.dataset_xml, dataset_list = args.dataset_list)
     data_loader = data.DataLoader(dataset, batch_size, pin_memory=True)
 
     model = build_SSD(
@@ -102,7 +111,7 @@ def test():
                 num_classes = num_classes
             )
 
-    model.load_state_dict(torch.load('save.pth'))
+    model.load_state_dict(torch.load(os.path.join('save',load)))
 
     if torch.cuda.is_available():
         model = model.cuda()
@@ -120,10 +129,11 @@ def test():
         out = model(img)
 
         for i in range(img.data.size(0)):
-            showtime(img.data[i], (out[0].data[i], out[1].data[i]), 0.8)
+            show_bndbox((img.data[i].cpu(), y.data[i]))
+            showtime(img.data[i], (out[0].data[i], out[1].data[i]))
 
 
-def showtime(img, x, conf_th):
+def showtime(img, x):
     """
     Args:
         x : (tuple) x_loc, x_conf
@@ -150,8 +160,8 @@ def showtime(img, x, conf_th):
                     w = s[k] * a[r]**.5
                     h = s[k] / a[r]**.5
                     box_d.append([c_x-w/2, c_y-h/2, c_x+w/2, c_y+h/2])
-                w = (s[k] * s[k+1])**.5 / f
-                h = (s[k] * s[k+1])**.5 / f
+                w = (s[k] * s[k+1])**.5
+                h = (s[k] * s[k+1])**.5
                 box_d.append([c_x-w/2, c_y-h/2, c_x+w/2, c_y+h/2])
 
     box_d = torch.FloatTensor(box_d)
@@ -159,23 +169,36 @@ def showtime(img, x, conf_th):
         box_d = box_d.cuda()
 
     x_conf = Variable(x_conf)
-    box_c = F.softmax(x_conf).data.view(-1, C)[:,1:] > conf_th
+    soft = F.softmax(x_conf, dim=1).data[:,1:]
+    pred, c = torch.max(soft, 1)
+    c = c.float().view(-1, 1) + 1
+    pred = pred.view(-1, 1)
     x_conf = x_conf.data
 
-    if box_c.sum() != 0: 
-        box_idx = box_c.sum(1).gt(0).unsqueeze(1).expand_as(x_conf)
-        _, c_idx = torch.sort(x_conf[box_idx].view(-1,C), descending=True)
-        c = c_idx[:,0].contiguous().view(-1,1)
-        c = c.float()
+    x_loc += minmax_to_cwh(box_d)
+    l = cwh_to_minmax(x_loc)
 
-        x_loc += minmax_to_cwh(box_d)
-        box_idx = box_c.sum(1).gt(0).unsqueeze(1).expand_as(x_loc)
-        l = cwh_to_minmax(x_loc[box_idx].view(-1,4))
+    l = torch.clamp(l, min=1/300, max=1.0)
 
-        box = torch.cat((c,l), 1)
+    box = torch.cat((c, l, pred), 1)
 
-    sample = (img.cpu(), box)
+    box = box[torch.sort(box[:,5], descending=True)[1]]
+    for i in range(8732):
+        if box[i, 5] < 0.1:
+            break
+        j = jaccard(box[:,1:5],box[i,1:5].view(-1,4))
+        idx = (j > 0.2) & (j < 1.0) & (box[:,0]==box[i,0]).view(-1,1)
+        box[:, 5][idx] = 0
+        box = box[torch.sort(box[:,5], descending=True)[1]]
+
+    idx = box[:,5] > 0.8
+    sample = (img.cpu(), box[:,:5][idx.view(-1,1).expand_as(box[:,:5])].contiguous().view(-1,5))
     show_bndbox(sample)
+
+
+        
+
+    
 
 
 

@@ -6,6 +6,6 @@ from train import *
 
 print('nnnnn')
 
-#train()
+train()
 
-test()
+#test()

@@ -5,6 +5,7 @@ from data.datasets.xmlreader import xmlreader
 from PIL import Image
 import numpy as np
 import cv2
+import random
 from torch.utils.data import Dataset, DataLoader
 
 class VOC2012Dataset(Dataset):
@@ -55,16 +56,34 @@ class VOC2012Dataset(Dataset):
             ymax = box['ymax'] / h
             
             y[i] = [obj_c, xmin, ymin, xmax, ymax]
+
+        y = torch.FloatTensor(y)
+        img, y = self.augmentation((img, y))
         
         img = cv2.resize(img, (300,300))
         img = torch.from_numpy(img).permute(2, 0, 1)
-        img = img.float() / 255
-        y = torch.FloatTensor(y)
-        sample = (img, y)
+        img = img.float() / 255           
+
+        sample = (img, y)        
 
         return sample
-                
+    
+    def augmentation(self, sample):
+        img, y = sample
+        p = random.random()
+
+        if p > 0.5:
+            img = cv2.flip(img, 1)
+            y[:,1:] = torch.mm(y[:,1:], torch.FloatTensor([[0, 0, -1, 0],
+                                                            [0, 1, 0, 0],
+                                                            [-1, 0, 0, 0],
+                                                            [0, 0, 0, 1]]))
+            y[:,1:] += torch.FloatTensor([1, 0, 1, 0])
         
+        output = (img,y)
+
+        return output
+
 def show_bndbox(sample):
     class_list = ['background',
             'person', 
@@ -75,16 +94,21 @@ def show_bndbox(sample):
     img = img.permute(1, 2, 0) * 255
     img = np.uint8(img.numpy())
 
-    if box != None:
+    color = [(255,0,0), (0,255,0), (0,0,255)]
+
+    
+    if box.dim() != 0:
         for i in range(box.size(0)):
             obj = int(box[i, 0])
+            if obj == 0:
+                continue
             xmin = int(box[i, 1] * 300)
             ymin = int(box[i, 2] * 300)
             xmax = int(box[i, 3] * 300)
             ymax = int(box[i, 4] * 300)
         
-            img = cv2.putText(img, class_list[obj],(xmin,ymax), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,255,0), 2)
-            img = cv2.rectangle(img, (xmin,ymin), (xmax,ymax), (0,255,0), 2)
+            img = cv2.putText(img, class_list[obj],(xmin,ymax), cv2.FONT_HERSHEY_SIMPLEX, 1, color[i%3], 2)
+            img = cv2.rectangle(img, (xmin,ymin), (xmax,ymax), color[i%3], 2)
 
     cv2.imshow('image', img)
     cv2.waitKey(0)

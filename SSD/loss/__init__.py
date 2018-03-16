@@ -39,8 +39,9 @@ class myloss(nn.Module):
         y_loc = y[:,:,1:][pos_idx].view(-1,4)
         loss_loc = F.smooth_l1_loss(x_loc, y_loc, size_average=False)
 
+
         #Confidence Loss
-        l = softmax_loss(x_conf.contiguous().view(-1, self.num_classes), y[:,:,4].long().view(-1)).view(N, -1)
+        l = softmax_loss(x_conf.contiguous().view(-1, self.num_classes), y[:,:,0].long().view(-1)).view(N, -1)
         
         l[pos] = 0
 
@@ -48,7 +49,6 @@ class myloss(nn.Module):
         _, idx_rank = loss_idx.sort(1)
         num_neg = torch.clamp(self.negpos_ratio*num_pos, max=pos.size(1)-1)
         neg = idx_rank < num_neg
-
         pos_idx = pos.unsqueeze(2).expand_as(x_conf)
         neg_idx = neg.unsqueeze(2).expand_as(x_conf)
         x_conf = x_conf[(pos_idx + neg_idx).gt(0)].view(-1, self.num_classes)

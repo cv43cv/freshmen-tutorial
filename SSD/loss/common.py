@@ -57,31 +57,72 @@ def match_db(y):
     output = torch.FloatTensor([])
     if torch.cuda.is_available():
         output=output.cuda()
-    for b in range(y.size(0)):
-        box_d = []
 
-        for k, (n, f) in enumerate(zip(n_db, f_sizes)):
-            for i in range(f):
-                for j in range(f):
-                    c_y = (i+.5)/f
-                    c_x = (j+.5)/f
-                    for r in range(n-1):
-                        w = s[k] * a[r]**.5
-                        h = s[k] / a[r]**.5
-                        box_d.append([c_x-w/2, c_y-h/2, c_x+w/2, c_y+h/2])
-                    w = (s[k] * s[k+1])**.5 / f
-                    h = (s[k] * s[k+1])**.5 / f
+    box_d = []
+
+    for k, (n, f) in enumerate(zip(n_db, f_sizes)):
+        for i in range(f):
+            for j in range(f):
+                c_y = (i+.5)/f
+                c_x = (j+.5)/f
+                for r in range(n-1):
+                    w = s[k] * a[r]**.5
+                    h = s[k] / a[r]**.5
                     box_d.append([c_x-w/2, c_y-h/2, c_x+w/2, c_y+h/2])
+                w = (s[k] * s[k+1])**.5
+                h = (s[k] * s[k+1])**.5
+                box_d.append([c_x-w/2, c_y-h/2, c_x+w/2, c_y+h/2])
 
-        box_d = torch.FloatTensor(box_d)
+    box_d = torch.FloatTensor(box_d)
         
-        if torch.cuda.is_available():
-            box_d = box_d.cuda()
+    if torch.cuda.is_available():
+        box_d = box_d.cuda()
 
+    N = y.size(0)
+
+    box_o = y[:,:,1:].contiguous().view(-1,4)
+    j = jaccard(box_d, box_o)
+    m = torch.eq(torch.max(j,1,keepdim=True)[0],j)
+    idx = j > 0.5
+    idx = idx * m
+
+    idx = idx.view(-1,y.size(1))
+    idx2 = idx.sum(1, keepdim=True).eq(0)
+    idx = torch.cat((idx,idx2),1)
+    idx = idx.view(j.size(0),-1)
+    
+    y2 = torch.FloatTensor([0,0,0,0,0])
+    if torch.cuda.is_available():
+        y2=y2.cuda()
+    y2 = y2.unsqueeze(0)
+    y2 = y2.unsqueeze(0)
+    y2 = y2.expand(y.size(0),1,5)
+
+    y = torch.cat((y,y2),1)
+
+    y = y.view(-1, 5)
+    y = torch.unsqueeze(y, 0)
+    y = y.expand(j.size(0),-1,5)
+
+    idx = torch.unsqueeze(idx, 2)
+    idx = idx.expand_as(y)
+    mb = y[idx]
+
+    mb = mb.view(j.size(0),-1,5)
+    mb = mb.permute(1,0,2)
+
+    mc = (mb[:,:,1:] - box_d).view(-1,4)
+    mc = minmax_to_cwh(mc).view(N,-1,4)
+    mb[:,:,1:] = mc
+    
+    return mb
+    """
+    for b in range(y.size(0)):
         box_o = y[b, :, 1:]
-
         j = jaccard(box_d, box_o)
+        m = torch.eq(torch.max(j,1,keepdim=True)[0],j)
         idx = j > 0.5
+        idx = idx * m
         idx = idx.float()
  
         obj_list = y[b]
@@ -93,6 +134,7 @@ def match_db(y):
         mb = torch.unsqueeze(mb, 0)
 
         output = torch.cat((output, mb))
+    """
 
     return output
 
