@@ -3,16 +3,23 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 
-from loss.common import *
+from .common import *
+from .focal_loss import *
 
+def my_loss(loss_name, num_classes, **kwargs):
+    if loss_name == 'CE_loss_hnm':
+        return CE_loss_hnm(num_classes, **kwargs)
+    elif loss_name == 'focal_loss':
+        return focal_loss(num_classes, **kwargs)
+    else:
+        raise ValueError('loss not implemented')
 
-class myloss(nn.Module):
-    def __init__(self, num_classes, negpos_ratio=3, use_gpu=True):
-        super(myloss, self).__init__()
+class CE_loss_hnm(nn.Module):
+    def __init__(self, num_classes, negpos_ratio=3):
+        super(CE_loss_hnm, self).__init__()
         self.num_classes = num_classes
         self.negpos_ratio = negpos_ratio
-        self.use_gpu = use_gpu
-
+        
     def forward(self, x, y):
         """
         Args:

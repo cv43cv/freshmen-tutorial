@@ -1,5 +1,6 @@
 import torch
 from torch.autograd import Variable
+from utils import *
 
 def intersect(box_a, box_b):
     """
@@ -48,55 +49,32 @@ def match_db(y):
         tensor shape (N, num of db, 5)
     """
 
-    n_db = [4, 6, 6, 6, 4, 4]
-    f_sizes = [38, 19, 10, 5, 3, 1]
-    (s_min, s_max) = (0.1, 0.9)
-    s = [s_min + (s_max - s_min) * k / 5 for k in range(7)]
-    a = [1, 2, 1/2, 3, 1/3]
+    box_d = make_box_d()
 
-    output = torch.FloatTensor([])
-    if torch.cuda.is_available():
-        output=output.cuda()
-
-    box_d = []
-
-    for k, (n, f) in enumerate(zip(n_db, f_sizes)):
-        for i in range(f):
-            for j in range(f):
-                c_y = (i+.5)/f
-                c_x = (j+.5)/f
-                for r in range(n-1):
-                    w = s[k] * a[r]**.5
-                    h = s[k] / a[r]**.5
-                    box_d.append([c_x-w/2, c_y-h/2, c_x+w/2, c_y+h/2])
-                w = (s[k] * s[k+1])**.5
-                h = (s[k] * s[k+1])**.5
-                box_d.append([c_x-w/2, c_y-h/2, c_x+w/2, c_y+h/2])
-
-    box_d = torch.FloatTensor(box_d)
-        
-    if torch.cuda.is_available():
-        box_d = box_d.cuda()
-
+    D = box_d.size(0)
     N = y.size(0)
 
     box_o = y[:,:,1:].contiguous().view(-1,4)
     j = jaccard(box_d, box_o)
-    m = torch.eq(torch.max(j,1,keepdim=True)[0],j)
+    j = j.view(D,N,-1)
+    m = torch.max(j,2,keepdim=True)[1]
+    z = torch.zeros_like(j).scatter_(2, m, 1)
+    z = z.view(D,-1).byte()
+
+    j = j.view(D,-1)
+    
+
     idx = j > 0.5
-    idx = idx * m
+    idx = idx*z
 
     idx = idx.view(-1,y.size(1))
     idx2 = idx.sum(1, keepdim=True).eq(0)
     idx = torch.cat((idx,idx2),1)
     idx = idx.view(j.size(0),-1)
     
-    y2 = torch.FloatTensor([0,0,0,0,0])
+    y2 = torch.zeros(y.size(0),1,5)
     if torch.cuda.is_available():
-        y2=y2.cuda()
-    y2 = y2.unsqueeze(0)
-    y2 = y2.unsqueeze(0)
-    y2 = y2.expand(y.size(0),1,5)
+        y2 = y2.cuda()
 
     y = torch.cat((y,y2),1)
 
@@ -138,37 +116,6 @@ def match_db(y):
 
     return output
 
-def minmax_to_cwh(a):
-    """
-    Args:
-        a : (tensor) Shape (n, 4)
-    """
-    m = [ [.5, 0, -1, 0],
-          [0, .5, 0, -1],
-          [.5, 0, 1, 0], 
-          [0, .5, 0, 1] ]
-    m = torch.FloatTensor(m)
-    if torch.cuda.is_available():
-        m = m.cuda()
-    b = torch.mm(a, m)
-
-    return b
-
-def cwh_to_minmax(a):
-    """
-    Args:
-        a : (tensor) Shape (n, 4)
-    """
-    m = [ [1, 0, 1, 0],
-          [0, 1, 0, 1],
-          [-.5, 0, .5, 0], 
-          [0, -.5, 0, .5] ]
-    m = torch.FloatTensor(m)
-    if torch.cuda.is_available():
-        m = m.cuda()
-    b = torch.mm(a, m)
-
-    return b
 
 def softmax_loss(x, y):
     """

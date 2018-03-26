@@ -4,7 +4,22 @@ import argparse
 import os
 import xml.etree.ElementTree as ET
 
-def xmlreader(dataset_xml, dataset_list):
+def datareader(dataset_xml, dataset_list):
+    
+    f = open(dataset_list,'r')
+    dataset = []
+    
+    while True:
+        line = f.readline()
+        if not line:
+            break
+        dataset.append(line[:-1])
+        
+    f.close()
+
+    return dataset
+
+def get_anno(dataset_xml, filename):
     """
     Return:
         sample (dictionary) : dictionary for a data
@@ -12,32 +27,22 @@ def xmlreader(dataset_xml, dataset_list):
                 sample['object'] (dictionary) : dictionary for objects in image
                 sample['object'][object class] (dictionary) : dictionary for the object's bounding box coordinates (xmin, ymin, xmax, ymax)
     """
-    f = open(dataset_list,'r')
-    data = []
-    idx=0
-    while True:
-        line = f.readline()
-        if not line:
-            break
-        xml = os.path.join(dataset_xml, line[:-1]+'.xml')
-        tree = ET.parse(xml)
-        root = tree.getroot()
-        filename = root.findtext('filename')
-        data.append({})
-        data[idx]['filename']=filename
-        data[idx]['object']={}
-        for obj in root.iter('object'):
-            if obj.findtext('difficult')==1:
-                continue
-            objname = obj.findtext('name')
-            data[idx]['object'][objname] = {}
-            bndbox = obj.find('bndbox')
-            for pos in bndbox.iter():
-                if pos.tag != 'bndbox':
-                    data[idx]['object'][objname][pos.tag] = int(pos.text)
-        idx+=1
-    f.close()
-
+    xml = os.path.join(dataset_xml, filename + '.xml')
+    tree = ET.parse(xml)
+    root = tree.getroot()
+    filename = root.findtext('filename')
+    data = {}
+    data['filename']=filename
+    data['object']={}
+    for obj in root.iter('object'):
+        if obj.findtext('difficult')==1:
+            continue
+        objname = obj.findtext('name')
+        data['object'][objname] = {}
+        bndbox = obj.find('bndbox')
+        for pos in bndbox.iter():
+            if pos.tag != 'bndbox':
+                data['object'][objname][pos.tag] = int(pos.text)
     return data
 
 
