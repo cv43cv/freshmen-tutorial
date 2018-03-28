@@ -8,6 +8,8 @@ import itertools
 import numpy as np
 import six
 
+from data.dataloader import *
+
 
 def jaccard_np(a, b):  
     lt = np.maximum(a[:, np.newaxis, :2], b[:, :2])
@@ -51,9 +53,13 @@ def eval_voc_detection(savename, dataset, ovthresh=0.5):
         pred_bboxes += [v[:,:4]]
         pred_labels += [v[:,5]]
         pred_scores += [v[:,4]]
-        _, _, y = dataset.feed(k)
+        _, img, y = dataset.feed(k)
         gt_bboxes += [y[:,1:].cpu().numpy()]
         gt_labels += [y[:,0].cpu().numpy()]
+        """
+        k = torch.from_numpy(np.concatenate((v[:,5].reshape(-1,1), v[:,:4].reshape(-1,4)), axis=1))
+        show_bndbox((img.cpu(),k))
+        """
     pred_bboxes = np.array(pred_bboxes)
     pred_labels = np.array(pred_labels)
     pred_scores = np.array(pred_scores)

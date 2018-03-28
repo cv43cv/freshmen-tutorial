@@ -33,16 +33,17 @@ def get_anno(dataset_xml, filename):
     filename = root.findtext('filename')
     data = {}
     data['filename']=filename
-    data['object']={}
-    for obj in root.iter('object'):
+    data['object']=[]
+    for i, obj in enumerate(root.iter('object')):
         if obj.findtext('difficult')==1:
             continue
         objname = obj.findtext('name')
-        data['object'][objname] = {}
+        data['object'].append({})
+        data['object'][i]['class'] = objname
         bndbox = obj.find('bndbox')
         for pos in bndbox.iter():
             if pos.tag != 'bndbox':
-                data['object'][objname][pos.tag] = int(pos.text)
+                data['object'][i][pos.tag] = int(pos.text)
     return data
 
 

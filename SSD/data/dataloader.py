@@ -68,13 +68,13 @@ class VOC_Dataset(Dataset):
         (h, w, _) = img.shape
 
         y = []
-        for i, (obj_s, box) in enumerate(anno['object'].items()):            
-            obj_c = self.class_list.index(obj_s)
+        for dic in anno['object']:            
+            obj_c = self.class_list.index(dic['class'])
 
-            xmin = box['xmin'] / w
-            ymin = box['ymin'] / h
-            xmax = box['xmax'] / w
-            ymax = box['ymax'] / h
+            xmin = dic['xmin'] / w
+            ymin = dic['ymin'] / h
+            xmax = dic['xmax'] / w
+            ymax = dic['ymax'] / h
             
             y.append([obj_c, xmin, ymin, xmax, ymax])
 
@@ -103,17 +103,17 @@ class VOC_Dataset(Dataset):
     def aug(self, sample):
         img, y = sample
         
-        img, y = self.crop(img, y, 0.5)
+        img, y = self.crop(img, y, 0.7)
         img, y = self.flip(img, y, 0.5)
 
         return (img, y)
 
     def crop(self, img, y, size):
-        xmin = size*random.random()
-        ymin = size*random.random()
+        xmin = (1-size)*random.random()
+        ymin = (1-size)*random.random()
         M = max(xmin, ymin)
-        xmax = xmin+1-size+(size-M)*random.random()
-        ymax = ymin+1-size+(size-M)*random.random()
+        xmax = xmin+size+(1-size-M)*random.random()
+        ymax = ymin+size+(1-size-M)*random.random()
 
         center = torch.mm(y[:,1:], torch.FloatTensor([[0.5, 0],
                                                         [0, 0.5],

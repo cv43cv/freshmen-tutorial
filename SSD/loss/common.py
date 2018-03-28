@@ -41,6 +41,8 @@ def jaccard(box_a, box_b):
 
     return inter / union
 
+box_d = make_box_d()
+
 def match_db(y):
     """
     Args:
@@ -48,8 +50,6 @@ def match_db(y):
     Return :
         tensor shape (N, num of db, 5)
     """
-
-    box_d = make_box_d()
 
     D = box_d.size(0)
     N = y.size(0)
@@ -60,10 +60,10 @@ def match_db(y):
     m = torch.max(j,2,keepdim=True)[1]
     z = torch.zeros_like(j).scatter_(2, m, 1)
     z = z.view(D,-1).byte()
+    
 
     j = j.view(D,-1)
     
-
     idx = j > 0.5
     idx = idx*z
 

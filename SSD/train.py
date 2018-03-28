@@ -31,15 +31,15 @@ args = parser.parse_args()
 
 ssd_dim = 300 
 num_classes = 21
-num_train1= 32
-num_train2= 32
+num_train1= -1
+num_train2= -1
 num_train = num_train1 + num_train2
 num_test = -1
 batch_size=32
-load = 'small-290.pth'
-start_iter = 0
+load = 'man-370.pth'
+start_iter = 371
 max_iter = 10000
-learning_rate = 1e-3
+learning_rate = 1e-4
 loss_name = 'CE_loss_hnm'
 weight_decay = 0.0005
 gamma = 0.1
@@ -64,8 +64,8 @@ def train():
     epoch = 0
 
     print('Loading Dataset...')
-    dataset1 = VOC_Dataset(0, num_train1, dataset_dir = args.dataset1_dir, dataset_xml = args.dataset1_xml, dataset_list = args.dataset1_list, augmentation=False)
-    dataset2 = VOC_Dataset(0, num_train2, dataset_dir = args.dataset2_dir, dataset_xml = args.dataset2_xml, dataset_list = args.dataset2_list, augmentation=False)
+    dataset1 = VOC_Dataset(0, num_train1, dataset_dir = args.dataset1_dir, dataset_xml = args.dataset1_xml, dataset_list = args.dataset1_list, augmentation=True)
+    dataset2 = VOC_Dataset(0, num_train2, dataset_dir = args.dataset2_dir, dataset_xml = args.dataset2_xml, dataset_list = args.dataset2_list, augmentation=True)
     data_loader = data.DataLoader(ConcatDataset((dataset2,dataset1)), batch_size, shuffle=True, collate_fn=collate_f)
 
     dataset3 = VOC_Dataset(0, num_test, dataset_dir = args.dataset3_dir, dataset_xml = args.dataset3_xml, dataset_list = args.dataset3_list, augmentation=False)
@@ -106,7 +106,6 @@ def train():
             out = model(img)
             optimizer.zero_grad()
             loss_loc, loss_conf = criterion(out, y)
-
             loss = loss_loc + loss_conf
 
             if loss.data[0] == 0:
@@ -120,15 +119,19 @@ def train():
         print('Timer: %.4f sec.' % (t1 - t0))
 
         if iteration % 10 == 0:
-            torch.save(model.state_dict(), os.path.join('save', 'small-' + str(iteration) + '.pth'))
+            torch.save(model.state_dict(), os.path.join('save', 'man-' + str(iteration) + '.pth'))
+            print('model saved')
             l_test = 0
             t0 = time.time()
-            """
+            
+            for param in model.parameters():
+                param.requires_grad = False
+
             for i, d in enumerate(test_loader, 0):
                 fi, img, y = d
 
-                img = Variable(img)
-                y = Variable(y)
+                img = Variable(img, requires_grad=False)
+                y = Variable(y, requires_grad=False)
     
                 out = model(img)
                 optimizer.zero_grad()
@@ -141,13 +144,16 @@ def train():
             t1 = time.time()
             print('test ' + ' || Loss: %.4f ||' % (l_test /len(test_loader)), end=' ')
             print('Timer: %.4f sec.' % (t1 - t0))
-            """
+
+            for param in model.parameters():
+                param.requires_grad = True
+            
 
     print("training end. model is saved in save.pth")
 
 def test():
-    dataset2 = VOC_Dataset(0, num_train2, dataset_dir = args.dataset2_dir, dataset_xml = args.dataset2_xml, dataset_list = args.dataset2_list, augmentation=False)
-    test_loader = data.DataLoader(dataset2, batch_size, shuffle=False, collate_fn=collate_f)
+    dataset3 = VOC_Dataset(0, num_test, dataset_dir = args.dataset3_dir, dataset_xml = args.dataset3_xml, dataset_list = args.dataset3_list, augmentation=False)
+    test_loader = data.DataLoader(dataset3, batch_size, shuffle=False, collate_fn=collate_f)
 
     model = build_SSD(
                 phase = 'train',
@@ -177,16 +183,19 @@ def test():
         x = (out[0].data, out[1].data)
         yy = y.data
 
-        #save_result(x, fi, 'class')
-    
+        save_result(x, fi, 'class')
+        """
         for i in range(batch_size):
-            showtime(image[i], (make_bb(out[0].data[i]), out[1].data[i]))
+            #show_bndbox((image[i].cpu(),yy[i]))
+            showtime(image[i], (out[0].data[i], out[1].data[i]))
+        """
+        
+        
     
 
 def voc_eval():
     print('start eval...')
-    dataset = VOC_Dataset(0, num_train2, dataset_dir = args.dataset2_dir, dataset_xml = args.dataset2_xml, dataset_list = args.dataset2_list, augmentation=False)
-    
+    dataset = VOC_Dataset(0, num_test, dataset_dir = args.dataset3_dir, dataset_xml = args.dataset3_xml, dataset_list = args.dataset3_list, augmentation=False)   
 
     aps = []
 
@@ -345,7 +354,7 @@ def save_result(x, fi, savename, max_per_image=200):
             
             j = jaccard(l, l)
 
-            idx = j > 0.45
+            idx = j > 0.3
             idx = idx * st
             idx = idx.sum(1).gt(0)
             idx = ~idx
@@ -398,14 +407,14 @@ def showtime(img, x):
     box = box[torch.sort(box[:,5], descending=True)[1]]
 
     for i in range(8732):
-        if box[i, 5] < 0.1:
+        if box[i, 5] < 0.5:
             break
         j = jaccard(box[:,1:5],box[i,1:5].view(-1,4))
         idx = (j > 0.2) & (j < 1.0) & (box[:,0]==box[i,0]).view(-1,1)
         box[:, 5][idx] = 0
         box = box[torch.sort(box[:,5], descending=True)[1]]
 
-    idx = box[:,5] > 0.2
+    idx = box[:,5] > 0.5
     sample = (img.cpu(), box[:,:5][idx.view(-1,1).expand_as(box[:,:5])].contiguous().view(-1,5))
     show_bndbox(sample)
 
