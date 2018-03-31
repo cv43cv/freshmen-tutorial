@@ -35,9 +35,10 @@ num_train1= -1
 num_train2= -1
 num_train = num_train1 + num_train2
 num_test = -1
+test_during_train = False
 batch_size=32
-load = 'man-370.pth'
-start_iter = 371
+load = ''
+start_iter = 1
 max_iter = 10000
 learning_rate = 1e-4
 loss_name = 'CE_loss_hnm'
@@ -64,8 +65,8 @@ def train():
     epoch = 0
 
     print('Loading Dataset...')
-    dataset1 = VOC_Dataset(0, num_train1, dataset_dir = args.dataset1_dir, dataset_xml = args.dataset1_xml, dataset_list = args.dataset1_list, augmentation=True)
-    dataset2 = VOC_Dataset(0, num_train2, dataset_dir = args.dataset2_dir, dataset_xml = args.dataset2_xml, dataset_list = args.dataset2_list, augmentation=True)
+    dataset1 = VOC_Dataset(0, num_train1, dataset_dir = args.dataset1_dir, dataset_xml = args.dataset1_xml, dataset_list = args.dataset1_list, augmentation=False)
+    dataset2 = VOC_Dataset(0, num_train2, dataset_dir = args.dataset2_dir, dataset_xml = args.dataset2_xml, dataset_list = args.dataset2_list, augmentation=False)
     data_loader = data.DataLoader(ConcatDataset((dataset2,dataset1)), batch_size, shuffle=True, collate_fn=collate_f)
 
     dataset3 = VOC_Dataset(0, num_test, dataset_dir = args.dataset3_dir, dataset_xml = args.dataset3_xml, dataset_list = args.dataset3_list, augmentation=False)
@@ -105,6 +106,7 @@ def train():
    
             out = model(img)
             optimizer.zero_grad()
+
             loss_loc, loss_conf = criterion(out, y)
             loss = loss_loc + loss_conf
 
@@ -119,40 +121,49 @@ def train():
         print('Timer: %.4f sec.' % (t1 - t0))
 
         if iteration % 10 == 0:
-            torch.save(model.state_dict(), os.path.join('save', 'man-' + str(iteration) + '.pth'))
-            print('model saved')
-            l_test = 0
-            t0 = time.time()
-            
-            for param in model.parameters():
-                param.requires_grad = False
+            torch.save(model.state_dict(), os.path.join('save', 'fool-' + str(iteration) + '.pth'))
+            if test_during_train:
+                for c in range(1, num_classes):
+                    if os.path.exists(os.path.join('result','fool'+str(c))):
+                        os.remove(os.path.join('result','fool'+str(c)))
 
-            for i, d in enumerate(test_loader, 0):
-                fi, img, y = d
-
-                img = Variable(img, requires_grad=False)
-                y = Variable(y, requires_grad=False)
-    
-                out = model(img)
-                optimizer.zero_grad()
-                loss_loc, loss_conf = criterion(out, y)
-                loss = loss_loc + loss_conf
-                if loss.data[0] == 0:
-                    continue
-                l_test += loss.data[0]
                 
-            t1 = time.time()
-            print('test ' + ' || Loss: %.4f ||' % (l_test /len(test_loader)), end=' ')
-            print('Timer: %.4f sec.' % (t1 - t0))
+                print('model saved')
+                l_test = 0
+                t0 = time.time()
+                
+                for param in model.parameters():
+                    param.requires_grad = False
 
-            for param in model.parameters():
-                param.requires_grad = True
+                for i, d in enumerate(test_loader, 0):
+                    fi, img, y = d
+
+                    img = Variable(img, requires_grad=False)
+                    y = Variable(y, requires_grad=False)
+        
+                    out = model(img)
+                    optimizer.zero_grad()
+                    loss_loc, loss_conf = criterion(out, y)
+                    loss = loss_loc + loss_conf
+                    if loss.data[0] == 0:
+                        continue
+                    l_test += loss.data[0]
+
+                    save_result((out[0].data,out[1].data), fi, 'fool')
+                    
+                t1 = time.time()
+                print('test ' + ' || Loss: %.4f ||' % (l_test /len(test_loader)), end=' ')
+                print('Timer: %.4f sec.' % (t1 - t0))
+                print('start eval...')
+                print(eval_voc_detection('fool',dataset3))
+                for param in model.parameters():
+                    param.requires_grad = True
             
 
     print("training end. model is saved in save.pth")
 
 def test():
-    dataset3 = VOC_Dataset(0, num_test, dataset_dir = args.dataset3_dir, dataset_xml = args.dataset3_xml, dataset_list = args.dataset3_list, augmentation=False)
+    dataset3 = VOC_Dataset(0, num_test, dataset_dir = args.dataset1_dir, dataset_xml = args.dataset1_xml, dataset_list = args.dataset1_list, augmentation=False)
     test_loader = data.DataLoader(dataset3, batch_size, shuffle=False, collate_fn=collate_f)
 
     model = build_SSD(
@@ -166,8 +177,8 @@ def test():
         model = model.cuda()
 
     for c in range(1, num_classes):
-        if os.path.exists(os.path.join('result','class'+str(c))):
-            os.remove(os.path.join('result','class'+str(c)))
+        if os.path.exists(os.path.join('result','new'+str(c))):
+            os.remove(os.path.join('result','new'+str(c)))
 
     for i, d in enumerate(test_loader, 0):
         print(i)
@@ -183,12 +194,12 @@ def test():
         x = (out[0].data, out[1].data)
         yy = y.data
 
-        save_result(x, fi, 'class')
-        """
+        save_result(x, fi, 'new')
+        
         for i in range(batch_size):
-            #show_bndbox((image[i].cpu(),yy[i]))
+            show_bndbox((image[i].cpu(),yy[i]))
             showtime(image[i], (out[0].data[i], out[1].data[i]))
-        """
+        
         
         
     
@@ -211,7 +222,7 @@ def voc_eval():
 
     print(mAP)
     """
-    print(eval_voc_detection('class',dataset))
+    print(eval_voc_detection('new',dataset))
 
 
 def voc_ap(savename, dataset, classname, ovthresh=0.5):
@@ -339,6 +350,10 @@ def save_result(x, fi, savename, max_per_image=200):
             l = l[z.unsqueeze(1).expand_as(l)].view(-1,4)
             pred = pred[z]
 
+            if l.size(0) > max_per_image:
+                l = l[:max_per_image]
+                pred = pred[:max_per_image]
+
             N = l.size(0)
 
             st = np.zeros((N,N))
@@ -364,9 +379,7 @@ def save_result(x, fi, savename, max_per_image=200):
             l = l[idx].view(-1,4)
             """
             """
-            if l.size(0) > max_per_image:
-                l = l[:max_per_image]
-                pred = pred[:max_per_image]
+            
                 
             for i in range(l.size(0)):
                 line = l[i].cpu().numpy()
@@ -410,7 +423,7 @@ def showtime(img, x):
         if box[i, 5] < 0.5:
             break
         j = jaccard(box[:,1:5],box[i,1:5].view(-1,4))
-        idx = (j > 0.2) & (j < 1.0) & (box[:,0]==box[i,0]).view(-1,1)
+        idx = (j > 0.5) & (j < 1.0) & (box[:,0]==box[i,0]).view(-1,1)
         box[:, 5][idx] = 0
         box = box[torch.sort(box[:,5], descending=True)[1]]
 

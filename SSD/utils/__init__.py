@@ -28,13 +28,19 @@ def make_box_d():
     return box_d
 
 
-def make_bb(x_loc):
-    x = x_loc.view(-1,4)
+def make_bb(x):
     box_d = make_box_d()
-    
-    l = cwh_to_minmax(x).view_as(x_loc)
+    box_c = minmax_to_cwh(box_d)
 
-    l += box_d
+    l = torch.zeros_like(x)
+
+    if x.dim() == 3:
+        l[:,:,:2] = x[:,:,:2]*box_c[:,2:] + box_c[:,:2]
+        l[:,:,2:] = torch.exp(x[:,:,2:])*box_c[:,2:]
+    elif x.dim() == 2:
+        l[:,:2] = x[:,:2]*box_c[:,2:] + box_c[:,:2]
+        l[:,2:] = torch.exp(x[:,2:])*box_c[:,2:]
+    l = cwh_to_minmax(l.view(-1,4)).view_as(x)
 
     return l
 
@@ -69,3 +75,9 @@ def cwh_to_minmax(a):
     b = torch.mm(a, m)
 
     return b
+
+if __name__  == '__main__':
+    while(1):
+        a = input()
+        box_d = make_box_d()
+        print(box_d[int(a)])

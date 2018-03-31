@@ -58,19 +58,24 @@ def match_db(y):
     j = jaccard(box_d, box_o)
     j = j.view(D,N,-1)
     m = torch.max(j,2,keepdim=True)[1]
-    z = torch.zeros_like(j).scatter_(2, m, 1)
-    z = z.view(D,-1).byte()
-    
+    m = torch.zeros_like(j).scatter_(2, m, 1)
+    m = m.view(D,-1).byte()
 
     j = j.view(D,-1)
+
+    n = torch.max(j,0,keepdim=True)[1]
+    n = torch.zeros_like(j).scatter_(0, n, 1)
+    n = n.byte()
     
     idx = j > 0.5
-    idx = idx*z
+    idx = ((idx + n).gt(0)) * m
 
     idx = idx.view(-1,y.size(1))
     idx2 = idx.sum(1, keepdim=True).eq(0)
     idx = torch.cat((idx,idx2),1)
     idx = idx.view(j.size(0),-1)
+
+    y[:,:,1:] = minmax_to_cwh(y[:,:,1:].contiguous().view(-1,4)).view(N,-1,4)
     
     y2 = torch.zeros(y.size(0),1,5)
     if torch.cuda.is_available():
@@ -89,9 +94,15 @@ def match_db(y):
     mb = mb.view(j.size(0),-1,5)
     mb = mb.permute(1,0,2)
 
-    mc = (mb[:,:,1:] - box_d).view(-1,4)
-    mc = minmax_to_cwh(mc).view(N,-1,4)
-    mb[:,:,1:] = mc
+    ttt = mb[:,:,1:]
+    box_c = minmax_to_cwh(box_d)
+
+    mc = (ttt[:,:,:2]-box_c[:,:2])/box_c[:,2:]
+
+    mwh = torch.log(ttt[:,:,2:]/box_c[:,2:])
+    
+    mb[:,:,1:3] = mc
+    mb[:,:,3:] = mwh
     
     return mb
     """
