@@ -35,10 +35,10 @@ num_train1= -1
 num_train2= -1
 num_train = num_train1 + num_train2
 num_test = -1
-test_during_train = False
+test_during_train = True
 batch_size=32
-load = ''
-start_iter = 1
+load = 'fool-400.pth'
+start_iter = 401
 max_iter = 10000
 learning_rate = 1e-4
 loss_name = 'CE_loss_hnm'
@@ -65,8 +65,8 @@ def train():
     epoch = 0
 
     print('Loading Dataset...')
-    dataset1 = VOC_Dataset(0, num_train1, dataset_dir = args.dataset1_dir, dataset_xml = args.dataset1_xml, dataset_list = args.dataset1_list, augmentation=False)
-    dataset2 = VOC_Dataset(0, num_train2, dataset_dir = args.dataset2_dir, dataset_xml = args.dataset2_xml, dataset_list = args.dataset2_list, augmentation=False)
+    dataset1 = VOC_Dataset(0, num_train1, dataset_dir = args.dataset1_dir, dataset_xml = args.dataset1_xml, dataset_list = args.dataset1_list, augmentation=True)
+    dataset2 = VOC_Dataset(0, num_train2, dataset_dir = args.dataset2_dir, dataset_xml = args.dataset2_xml, dataset_list = args.dataset2_list, augmentation=True)
     data_loader = data.DataLoader(ConcatDataset((dataset2,dataset1)), batch_size, shuffle=True, collate_fn=collate_f)
 
     dataset3 = VOC_Dataset(0, num_test, dataset_dir = args.dataset3_dir, dataset_xml = args.dataset3_xml, dataset_list = args.dataset3_list, augmentation=False)
@@ -122,13 +122,11 @@ def train():
 
         if iteration % 10 == 0:
             torch.save(model.state_dict(), os.path.join('save', 'fool-' + str(iteration) + '.pth'))
+            print('model saved')
             if test_during_train:
                 for c in range(1, num_classes):
                     if os.path.exists(os.path.join('result','fool'+str(c))):
                         os.remove(os.path.join('result','fool'+str(c)))
-
-                
-                print('model saved')
                 l_test = 0
                 t0 = time.time()
                 
@@ -163,7 +161,7 @@ def train():
     print("training end. model is saved in save.pth")
 
 def test():
-    dataset3 = VOC_Dataset(0, num_test, dataset_dir = args.dataset1_dir, dataset_xml = args.dataset1_xml, dataset_list = args.dataset1_list, augmentation=False)
+    dataset3 = VOC_Dataset(0, num_test, dataset_dir = args.dataset3_dir, dataset_xml = args.dataset3_xml, dataset_list = args.dataset3_list, augmentation=False)
     test_loader = data.DataLoader(dataset3, batch_size, shuffle=False, collate_fn=collate_f)
 
     model = build_SSD(
@@ -177,8 +175,8 @@ def test():
         model = model.cuda()
 
     for c in range(1, num_classes):
-        if os.path.exists(os.path.join('result','new'+str(c))):
-            os.remove(os.path.join('result','new'+str(c)))
+        if os.path.exists(os.path.join('result','fool'+str(c))):
+            os.remove(os.path.join('result','fool'+str(c)))
 
     for i, d in enumerate(test_loader, 0):
         print(i)
@@ -194,11 +192,12 @@ def test():
         x = (out[0].data, out[1].data)
         yy = y.data
 
-        save_result(x, fi, 'new')
-        
+        save_result(x, fi, 'fool')
+        """
         for i in range(batch_size):
             show_bndbox((image[i].cpu(),yy[i]))
             showtime(image[i], (out[0].data[i], out[1].data[i]))
+        """
         
         
         
@@ -222,7 +221,7 @@ def voc_eval():
 
     print(mAP)
     """
-    print(eval_voc_detection('new',dataset))
+    print(eval_voc_detection('fool',dataset))
 
 
 def voc_ap(savename, dataset, classname, ovthresh=0.5):
@@ -323,7 +322,7 @@ def save_result(x, fi, savename, max_per_image=200):
             l = bb[i]
             
             pred = soft[i,:,c]
-            idx = pred >= 0.1
+            idx = pred >= 0.01
             
             if idx.sum() == 0:
                 continue
@@ -369,7 +368,7 @@ def save_result(x, fi, savename, max_per_image=200):
             
             j = jaccard(l, l)
 
-            idx = j > 0.3
+            idx = j > 0.45
             idx = idx * st
             idx = idx.sum(1).gt(0)
             idx = ~idx
